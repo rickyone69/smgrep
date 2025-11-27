@@ -1,6 +1,6 @@
 [package]
 name = "smgrep"
-version = "0.3.0"
+version = "0.5.0"
 edition = "2024"
 description = "Semantic code search tool with GPU acceleration - Rust port of osgrep"
 license = "Apache-2.0"
@@ -64,6 +64,9 @@ reqwest = { version = "0.12", features = ["json"] }
 # IPC
 postcard = { version = "1", features = ["alloc"] }
 
+# Archive
+tar = "0.4"
+
 # Utilities
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -94,6 +97,9 @@ is-terminal = "0.4"
 smallvec = "1.15.1"
 flume = { version = "0.11.1", features = ["async"] }
 tokio-util = { version = "0.7.17", features = ["full"] }
+
+[build-dependencies]
+tar = "0.4"
 
 [dev-dependencies]
 tempfile = "3"

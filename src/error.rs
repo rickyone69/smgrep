@@ -5,7 +5,7 @@ use tree_sitter::{LanguageError, WasmError};
 
 use crate::{embed::candle::EmbeddingError, store::lance::StoreError, usock::SocketError};
 
-/// Main error type for the rsgrep application.
+/// Main error type for the smgrep application.
 ///
 /// This enum represents all possible errors that can occur throughout the
 /// application, including I/O operations, store operations, embedding

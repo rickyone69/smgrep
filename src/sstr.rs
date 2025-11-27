@@ -24,7 +24,7 @@ impl Str {
    }
 
    #[inline]
-   pub fn from_static(s: &'static str) -> Self {
+   pub const fn from_static(s: &'static str) -> Self {
       Self(Bytes::from_static(s.as_bytes()))
    }
 
@@ -95,12 +95,12 @@ impl Str {
    }
 
    #[inline]
-   pub fn is_empty(&self) -> bool {
+   pub const fn is_empty(&self) -> bool {
       self.0.is_empty()
    }
 
    #[inline]
-   pub fn len(&self) -> usize {
+   pub const fn len(&self) -> usize {
       self.0.len()
    }
 

@@ -1,30 +1,21 @@
 use std::{
+   fs,
+   io::Cursor,
    path::PathBuf,
    process::{Command, Stdio},
 };
 
 use console::style;
 
-use crate::{Result, error::Error};
+use crate::{Result, config, error::Error};
 
-fn find_smgrep_root() -> Result<PathBuf> {
-   let exe = std::env::current_exe()?;
-   let exe_dir = exe.parent().unwrap_or(exe.as_path());
+const PLUGIN_BUNDLE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/plugin-bundle.tar"));
 
-   let candidates = [
-      exe_dir.to_path_buf(),
-      exe_dir.join(".."),
-      exe_dir.join("../.."),
-      exe_dir.join("../share/smgrep"),
-   ];
-
-   for candidate in &candidates {
-      let marketplace = candidate.join(".claude-plugin/marketplace.json");
-      if marketplace.exists() {
-         return Ok(candidate.canonicalize()?);
-      }
-   }
-   Ok(exe_dir.to_path_buf())
+fn extract_plugin_bundle(dest: &PathBuf) -> Result<()> {
+   fs::create_dir_all(dest)?;
+   let mut archive = tar::Archive::new(Cursor::new(PLUGIN_BUNDLE));
+   archive.unpack(dest)?;
+   Ok(())
 }
 
 fn run_claude_command(args: &[&str]) -> Result<()> {
@@ -51,13 +42,17 @@ pub async fn execute() -> Result<()> {
          .bold()
    );
 
-   let smgrep_root = find_smgrep_root()?;
-   let root_path = smgrep_root.to_string_lossy();
+   let marketplace_dir = config::marketplace_dir();
+   println!("Marketplace: {}", style(marketplace_dir.display()).dim());
 
-   println!("smgrep root: {}", style(&root_path).dim());
+   println!("{}", style("Extracting plugin files...").dim());
+   extract_plugin_bundle(&marketplace_dir)?;
+   println!("{}", style("✓ Plugin files extracted").green());
 
-   println!("{}", style("Adding local marketplace...").dim());
-   match run_claude_command(&["plugin", "marketplace", "add", &root_path]) {
+   let marketplace_path = marketplace_dir.to_string_lossy();
+
+   println!("{}", style("Adding marketplace...").dim());
+   match run_claude_command(&["plugin", "marketplace", "add", &marketplace_path]) {
       Ok(()) => println!("{}", style("✓ Added smgrep marketplace").green()),
       Err(e) => {
          eprintln!("{}", style(format!("✗ Failed to add marketplace: {e}")).red());
@@ -67,7 +62,7 @@ pub async fn execute() -> Result<()> {
    }
 
    println!("{}", style("Installing plugin...").dim());
-   match run_claude_command(&["plugin", "install", "smgrep"]) {
+   match run_claude_command(&["plugin", "install", "smgrep@smgrep"]) {
       Ok(()) => println!("{}", style("✓ Installed smgrep plugin").green()),
       Err(e) => {
          eprintln!("{}", style(format!("✗ Failed to install plugin: {e}")).red());
@@ -81,7 +76,6 @@ pub async fn execute() -> Result<()> {
    println!("  1. Restart Claude Code if it's running");
    println!("  2. The plugin will automatically index your project when you open it");
    println!("  3. Claude will use smgrep for semantic code search automatically");
-   println!("  4. You can also use `smgrep` commands directly in your terminal");
 
    Ok(())
 }
@@ -91,5 +85,4 @@ fn print_troubleshooting() {
    eprintln!("{}", style("Troubleshooting:").yellow().bold());
    eprintln!("  • Ensure you have Claude Code installed");
    eprintln!("  • Try running: claude --version");
-   eprintln!("  • Check that smgrep was installed correctly with plugin files");
 }

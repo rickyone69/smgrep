@@ -1,6 +1,11 @@
-use std::process::Command;
+use std::{env, fs::File, path::Path, process::Command};
 
 fn main() {
+   build_git_metadata();
+   build_plugin_bundle();
+}
+
+fn build_git_metadata() {
    println!("cargo:rerun-if-changed=.git/HEAD");
    println!("cargo:rerun-if-changed=.git/refs/");
 
@@ -31,4 +36,26 @@ fn main() {
    println!("cargo:rustc-env=GIT_HASH={git_hash}");
    println!("cargo:rustc-env=GIT_TAG={git_tag}");
    println!("cargo:rustc-env=GIT_DIRTY={}", if git_dirty { "true" } else { "false" });
+}
+
+fn build_plugin_bundle() {
+   println!("cargo:rerun-if-changed=.claude-plugin");
+   println!("cargo:rerun-if-changed=plugins");
+
+   let out_dir = env::var("OUT_DIR").unwrap();
+   let dest_path = Path::new(&out_dir).join("plugin-bundle.tar");
+
+   let file = File::create(&dest_path).expect("Failed to create plugin-bundle.tar");
+   let mut builder = tar::Builder::new(file);
+
+   let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+   let root = Path::new(&manifest_dir);
+
+   builder
+      .append_dir_all(".claude-plugin", root.join(".claude-plugin"))
+      .expect("Failed to add .claude-plugin");
+   builder
+      .append_dir_all("plugins", root.join("plugins"))
+      .expect("Failed to add plugins");
+   builder.finish().expect("Failed to finish tar");
 }

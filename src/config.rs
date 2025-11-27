@@ -117,3 +117,7 @@ pub fn data_dir() -> PathBuf {
 pub fn model_dir() -> PathBuf {
    data_dir().join("models")
 }
+
+pub fn marketplace_dir() -> PathBuf {
+   data_dir().join("marketplace")
+}
