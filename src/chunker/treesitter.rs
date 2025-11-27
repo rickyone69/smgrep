@@ -1,119 +1,48 @@
-use std::path::Path;
+use std::{fs, path::Path, sync::Arc};
 
+use parking_lot::Mutex;
 use regex::Regex;
-use tree_sitter::{Language, Parser};
+use tree_sitter::{Language, Parser, WasmStore};
 
 use crate::{
    chunker::{
       Chunker, MAX_CHARS, MAX_LINES, OVERLAP_CHARS, OVERLAP_LINES, fallback::FallbackChunker,
    },
    error::{Result, RsgrepError},
+   grammar::GrammarManager,
    types::{Chunk, ChunkType},
 };
 
 pub struct TreeSitterChunker {
-   parser:                  Parser,
+   grammar_manager:         Arc<GrammarManager>,
    screaming_const_pattern: Regex,
 }
 
 impl TreeSitterChunker {
    pub fn new() -> Self {
+      Self::with_grammar_manager(Arc::new(GrammarManager::default()))
+   }
+
+   pub fn with_grammar_manager(grammar_manager: Arc<GrammarManager>) -> Self {
       Self {
-         parser:                  Parser::new(),
+         grammar_manager,
          screaming_const_pattern: Regex::new(r"(?:^|\n)\s*(?:export\s+)?const\s+[A-Z0-9_]+\s*=")
             .unwrap(),
       }
    }
 
    fn get_language(&self, path: &Path) -> Option<Language> {
-      let ext = path.extension()?.to_str()?.to_lowercase();
-      match ext.as_str() {
-         // JavaScript/TypeScript
-         "js" | "ts" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
-         "jsx" | "tsx" => Some(tree_sitter_typescript::LANGUAGE_TSX.into()),
-
-         // Python
-         "py" => Some(tree_sitter_python::LANGUAGE.into()),
-
-         // Go
-         "go" => Some(tree_sitter_go::LANGUAGE.into()),
-
-         // Rust
-         "rs" => Some(tree_sitter_rust::LANGUAGE.into()),
-
-         // C/C++
-         "c" => Some(tree_sitter_c::LANGUAGE.into()),
-         "h" => Some(tree_sitter_c::LANGUAGE.into()),
-         "cpp" | "cc" | "cxx" | "c++" => Some(tree_sitter_cpp::LANGUAGE.into()),
-         "hpp" | "hxx" | "h++" => Some(tree_sitter_cpp::LANGUAGE.into()),
-
-         // Java
-         "java" => Some(tree_sitter_java::LANGUAGE.into()),
-
-         // Ruby
-         "rb" => Some(tree_sitter_ruby::LANGUAGE.into()),
-
-         // PHP
-         "php" => Some(tree_sitter_php::LANGUAGE_PHP.into()),
-
-         // Swift
-         "swift" => Some(tree_sitter_swift::LANGUAGE.into()),
-
-         // Web
-         "html" | "htm" => Some(tree_sitter_html::LANGUAGE.into()),
-         "css" => Some(tree_sitter_css::LANGUAGE.into()),
-
-         // Shell
-         "sh" | "bash" => Some(tree_sitter_bash::LANGUAGE.into()),
-
-         // Lua
-         "lua" => Some(tree_sitter_lua::LANGUAGE.into()),
-
-         // Elixir
-         "ex" | "exs" => Some(tree_sitter_elixir::LANGUAGE.into()),
-
-         // Haskell
-         "hs" => Some(tree_sitter_haskell::LANGUAGE.into()),
-
-         // C#
-         "cs" => Some(tree_sitter_c_sharp::LANGUAGE.into()),
-
-         // Zig
-         "zig" => Some(tree_sitter_zig::LANGUAGE.into()),
-
-         // Nix
-         "nix" => Some(tree_sitter_nix::LANGUAGE.into()),
-
-         // R
-         "r" => Some(tree_sitter_r::LANGUAGE.into()),
-
-         // Julia
-         "jl" => Some(tree_sitter_julia::LANGUAGE.into()),
-
-         // Erlang
-         "erl" | "hrl" => Some(tree_sitter_erlang::LANGUAGE.into()),
-
-         // Clojure
-         "clj" | "cljs" | "cljc" | "edn" => Some(tree_sitter_clojure::LANGUAGE.into()),
-
-         // Common Lisp
-         "lisp" | "lsp" | "cl" => Some(tree_sitter_commonlisp::LANGUAGE_COMMONLISP.into()),
-
-         // Racket
-         "rkt" => Some(tree_sitter_racket::LANGUAGE.into()),
-
-         // Assembly
-         "s" | "asm" => Some(tree_sitter_asm::LANGUAGE.into()),
-
-         // Config/data formats
-         "yaml" | "yml" => Some(tree_sitter_yaml::LANGUAGE.into()),
-         "json" => Some(tree_sitter_json::LANGUAGE.into()),
-
-         _ => None,
+      match self.grammar_manager.get_language_for_path(path) {
+         Ok(Some(lang)) => Some(lang),
+         Ok(None) => None,
+         Err(e) => {
+            tracing::warn!("failed to load language for {}: {}", path.display(), e);
+            None
+         },
       }
    }
 
-   fn chunk_with_tree_sitter(&mut self, content: &str, path: &Path) -> Result<Vec<Chunk>> {
+   fn chunk_with_tree_sitter(&self, content: &str, path: &Path) -> Result<Vec<Chunk>> {
       let language = match self.get_language(path) {
          Some(lang) => lang,
          None => {
@@ -121,15 +50,18 @@ impl TreeSitterChunker {
          },
       };
 
-      self
-         .parser
-         .set_language(&language)
-         .map_err(|e| RsgrepError::Chunker(format!("Failed to set language: {}", e)))?;
+      let (mut parser, store) = self.grammar_manager.create_parser_with_store()?;
+      parser
+         .set_wasm_store(store)
+         .map_err(|e| RsgrepError::Chunker(format!("failed to set WASM store: {:?}", e)))?;
 
-      let tree = self
-         .parser
+      parser
+         .set_language(&language)
+         .map_err(|e| RsgrepError::Chunker(format!("failed to set language: {}", e)))?;
+
+      let tree = parser
          .parse(content, None)
-         .ok_or_else(|| RsgrepError::Chunker("Failed to parse file".to_string()))?;
+         .ok_or_else(|| RsgrepError::Chunker("failed to parse file".to_string()))?;
 
       let root = tree.root_node();
       let file_context = format!("File: {}", path.display());
@@ -474,12 +406,11 @@ impl Default for TreeSitterChunker {
 
 impl Chunker for TreeSitterChunker {
    fn chunk(&self, content: &str, path: &Path) -> Result<Vec<Chunk>> {
-      let mut chunker = Self::new();
-      let raw_chunks = chunker.chunk_with_tree_sitter(content, path)?;
+      let raw_chunks = self.chunk_with_tree_sitter(content, path)?;
 
       let chunks: Vec<Chunk> = raw_chunks
          .into_iter()
-         .flat_map(|c| chunker.split_if_too_big(c))
+         .flat_map(|c| self.split_if_too_big(c))
          .collect();
 
       Ok(chunks)

@@ -3,10 +3,13 @@ use std::{fs, path::PathBuf};
 use anyhow::{Context, Result};
 use console::style;
 
-use crate::config::{COLBERT_MODEL, DENSE_MODEL};
+use crate::{
+   config::{COLBERT_MODEL, DENSE_MODEL},
+   grammar::{GRAMMAR_URLS, GrammarManager},
+};
 
 pub async fn execute() -> Result<()> {
-   println!("{}\n", style("🏥 rsgrep Doctor").bold());
+   println!("{}\n", style("rsgrep Doctor").bold());
 
    let home = directories::UserDirs::new()
       .context("failed to get user directories")?
@@ -48,19 +51,54 @@ pub async fn execute() -> Result<()> {
 
    println!();
 
-   let grammars_to_check = vec!["typescript", "tsx", "python", "go"];
-   for lang in grammars_to_check {
-      let grammar_path = grammars.join(format!("tree-sitter-{}.wasm", lang));
-      let exists = grammar_path.exists();
-
-      let symbol = if exists {
-         style("✓").green()
-      } else {
+   let grammar_manager = match GrammarManager::with_auto_download(false) {
+      Ok(gm) => Some(gm),
+      Err(_) => {
+         println!(
+            "{} Grammar manager: {}",
+            style("✗").red(),
+            style("failed to initialize").dim()
+         );
          all_good = false;
-         style("✗").red()
-      };
+         None
+      },
+   };
 
-      println!("{} Grammar: {}", symbol, style(lang).dim());
+   if let Some(gm) = &grammar_manager {
+      let available = gm.available_languages();
+      let missing = gm.missing_languages();
+
+      for (lang, _) in GRAMMAR_URLS {
+         let exists = available.contains(lang);
+
+         let symbol = if exists {
+            style("✓").green()
+         } else {
+            style("○").yellow()
+         };
+
+         let status = if exists {
+            "installed".to_string()
+         } else {
+            "will download on first use".to_string()
+         };
+
+         println!("{} Grammar: {} ({})", symbol, style(lang).dim(), style(status).dim());
+      }
+
+      println!();
+      println!(
+         "{} {} of {} grammars installed",
+         style("ℹ").cyan(),
+         available.len(),
+         GRAMMAR_URLS.len()
+      );
+      if !missing.is_empty() {
+         println!(
+            "{} Missing grammars will be downloaded automatically when needed",
+            style("ℹ").cyan()
+         );
+      }
    }
 
    if data.exists()
