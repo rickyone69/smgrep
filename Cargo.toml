@@ -1,6 +1,6 @@
 [package]
 name = "smgrep"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
 description = "Semantic code search tool with GPU acceleration - Rust port of osgrep"
 license = "Apache-2.0"
@@ -13,7 +13,7 @@ categories = ["command-line-utilities", "development-tools", "text-processing"]
 authors = ["Can Bölük <me@can.ac>"]
 
 [features]
-default = []
+default = ["cuda"]
 cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
 
 [dependencies]
