@@ -5,24 +5,24 @@ use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::{
-   config::{COLBERT_MODEL, DENSE_MODEL},
+   config,
    grammar::{GRAMMAR_URLS, GrammarManager},
 };
 
 pub async fn execute() -> Result<()> {
-   println!("{}\n", style("rsgrep Setup").bold());
+   println!("{}\n", style("smgrep Setup").bold());
 
    let home = directories::UserDirs::new()
       .context("failed to get user directories")?
       .home_dir()
       .to_path_buf();
 
-   let root = home.join(".rsgrep");
+   let root = home.join(".smgrep");
    let models = root.join("models");
    let data = root.join("data");
    let grammars = root.join("grammars");
 
-   fs::create_dir_all(&root).context("failed to create .rsgrep directory")?;
+   fs::create_dir_all(&root).context("failed to create .smgrep directory")?;
    fs::create_dir_all(&models).context("failed to create models directory")?;
    fs::create_dir_all(&data).context("failed to create data directory")?;
    fs::create_dir_all(&grammars).context("failed to create grammars directory")?;
@@ -43,17 +43,14 @@ pub async fn execute() -> Result<()> {
 
    println!("\n{}", style("Setup Complete!").green().bold());
    println!("\n{}", style("You can now run:").dim());
-   println!("   {} {}", style("rsgrep index").green(), style("# Index your repository").dim());
+   println!("   {} {}", style("smgrep index").green(), style("# Index your repository").dim());
    println!(
       "   {} {}",
-      style("rsgrep \"search query\"").green(),
+      style("smgrep \"search query\"").green(),
       style("# Search your code").dim()
    );
-   println!("   {} {}", style("rsgrep doctor").green(), style("# Check health status").dim());
-   println!(
-      "\n{}",
-      style("Note: Grammars are also downloaded automatically on first use.").dim()
-   );
+   println!("   {} {}", style("smgrep doctor").green(), style("# Check health status").dim());
+   println!("\n{}", style("Note: Grammars are also downloaded automatically on first use.").dim());
 
    Ok(())
 }
@@ -69,7 +66,9 @@ fn check_dir(name: &str, path: &PathBuf) {
 }
 
 async fn download_models(models_dir: &PathBuf) -> Result<()> {
-   for model_id in [DENSE_MODEL, COLBERT_MODEL] {
+   let cfg = config::get();
+   let models = [&cfg.dense_model, &cfg.colbert_model];
+   for model_id in models {
       let model_path = models_dir.join(model_id.replace('/', "--"));
 
       if model_path.exists() {
@@ -137,12 +136,7 @@ async fn download_grammars(grammars_dir: &PathBuf) -> Result<()> {
             ));
          },
          Err(e) => {
-            spinner.finish_with_message(format!(
-               "{} Failed: {} - {}",
-               style("✗").red(),
-               lang,
-               e
-            ));
+            spinner.finish_with_message(format!("{} Failed: {} - {}", style("✗").red(), lang, e));
          },
       }
    }

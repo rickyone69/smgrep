@@ -18,8 +18,8 @@ use lancedb::{
 use parking_lot::RwLock;
 
 use crate::{
-   config::{COLBERT_DIM, DENSE_DIM},
-   error::{Result, RsgrepError},
+   config,
+   error::{Result, SmgrepError},
    types::{ChunkType, SearchResponse, SearchResult, SearchStatus, StoreInfo, VectorRecord},
 };
 
@@ -97,11 +97,11 @@ impl LanceStore {
       let conn = connect(
          db_path
             .to_str()
-            .ok_or_else(|| RsgrepError::Store("invalid database path".to_string()))?,
+            .ok_or_else(|| SmgrepError::Store("invalid database path".to_string()))?,
       )
       .execute()
       .await
-      .map_err(|e| RsgrepError::Store(format!("failed to connect to database: {}", e)))?;
+      .map_err(|e| SmgrepError::Store(format!("failed to connect to database: {}", e)))?;
 
       let conn = Arc::new(conn);
       self
@@ -119,7 +119,7 @@ impl LanceStore {
          Ok(table) => {
             Self::check_and_migrate_table(&conn, store_id, &table).await?;
             conn.open_table(store_id).execute().await.map_err(|e| {
-               RsgrepError::Store(format!("failed to reopen table after migration: {}", e))
+               SmgrepError::Store(format!("failed to reopen table after migration: {}", e))
             })
          },
          Err(_) => {
@@ -130,7 +130,7 @@ impl LanceStore {
                .create_table(store_id, RecordBatchOnce::new(empty_batch))
                .execute()
                .await
-               .map_err(|e| RsgrepError::Store(format!("failed to create table: {}", e)))
+               .map_err(|e| SmgrepError::Store(format!("failed to create table: {}", e)))
          },
       }
    }
@@ -141,13 +141,13 @@ impl LanceStore {
       table: &Table,
    ) -> Result<()> {
       let mut stream = table.query().limit(1).execute().await.map_err(|e| {
-         RsgrepError::Store(format!("failed to sample table for migration check: {}", e))
+         SmgrepError::Store(format!("failed to sample table for migration check: {}", e))
       })?;
 
       let sample_batch = match stream.try_next().await {
          Ok(Some(batch)) => batch,
          Ok(None) => return Ok(()),
-         Err(e) => return Err(RsgrepError::Store(format!("failed to read sample batch: {}", e))),
+         Err(e) => return Err(SmgrepError::Store(format!("failed to read sample batch: {}", e))),
       };
 
       let vector_col = match sample_batch.column_by_name("vector") {
@@ -162,25 +162,25 @@ impl LanceStore {
 
       let sample_vector_len = vector_list.value_length() as usize;
 
-      if sample_vector_len == DENSE_DIM {
+      if sample_vector_len == config::get().dense_dim {
          return Ok(());
       }
 
       let mut all_stream = table.query().execute().await.map_err(|e| {
-         RsgrepError::Store(format!("failed to read existing data for migration: {}", e))
+         SmgrepError::Store(format!("failed to read existing data for migration: {}", e))
       })?;
 
       let mut existing_batches: Vec<RecordBatch> = Vec::new();
       while let Some(batch) = all_stream
          .try_next()
          .await
-         .map_err(|e| RsgrepError::Store(format!("failed to collect existing batches: {}", e)))?
+         .map_err(|e| SmgrepError::Store(format!("failed to collect existing batches: {}", e)))?
       {
          existing_batches.push(batch);
       }
 
       conn.drop_table(store_id, &[]).await.map_err(|e| {
-         RsgrepError::Store(format!("failed to drop old table during migration: {}", e))
+         SmgrepError::Store(format!("failed to drop old table during migration: {}", e))
       })?;
 
       let schema = Self::create_schema();
@@ -191,7 +191,7 @@ impl LanceStore {
          .execute()
          .await
          .map_err(|e| {
-            RsgrepError::Store(format!("failed to create new table during migration: {}", e))
+            SmgrepError::Store(format!("failed to create new table during migration: {}", e))
          })?;
 
       if !existing_batches.is_empty() {
@@ -365,7 +365,7 @@ impl LanceStore {
                .add(RecordBatchOnce::new(migrated_batch))
                .execute()
                .await
-               .map_err(|e| RsgrepError::Store(format!("failed to add migrated records: {}", e)))?;
+               .map_err(|e| SmgrepError::Store(format!("failed to add migrated records: {}", e)))?;
          }
       }
 
@@ -373,8 +373,9 @@ impl LanceStore {
    }
 
    fn normalize_vector(old_vector: &[f32]) -> Vec<f32> {
-      let mut new_vector = vec![0.0; DENSE_DIM];
-      let copy_len = old_vector.len().min(DENSE_DIM);
+      let dim = config::get().dense_dim;
+      let mut new_vector = vec![0.0; dim];
+      let copy_len = old_vector.len().min(dim);
       new_vector[..copy_len].copy_from_slice(&old_vector[..copy_len]);
       new_vector
    }
@@ -391,7 +392,7 @@ impl LanceStore {
             "vector",
             DataType::FixedSizeList(
                Arc::new(Field::new("item", DataType::Float32, true)),
-               DENSE_DIM as i32,
+               config::get().dense_dim as i32,
             ),
             false,
          ),
@@ -416,7 +417,7 @@ impl LanceStore {
       let vector_values = Float32Builder::new().finish();
       let vector_array = FixedSizeListArray::new(
          Arc::new(Field::new("item", DataType::Float32, true)),
-         DENSE_DIM as i32,
+         config::get().dense_dim as i32,
          Arc::new(vector_values),
          None,
       );
@@ -445,12 +446,12 @@ impl LanceStore {
          Arc::new(context_prev_array),
          Arc::new(context_next_array),
       ])
-      .map_err(|e| RsgrepError::Store(format!("failed to create empty batch: {}", e)))
+      .map_err(|e| SmgrepError::Store(format!("failed to create empty batch: {}", e)))
    }
 
    fn records_to_batch(records: Vec<VectorRecord>) -> Result<RecordBatch> {
       if records.is_empty() {
-         return Err(RsgrepError::Store("empty batch".to_string()));
+         return Err(SmgrepError::Store("empty batch".to_string()));
       }
 
       let schema = Self::create_schema();
@@ -479,10 +480,11 @@ impl LanceStore {
          start_line_builder.append_value(record.start_line);
          end_line_builder.append_value(record.end_line);
 
-         if record.vector.len() != DENSE_DIM {
-            return Err(RsgrepError::Store(format!(
+         let dim = config::get().dense_dim;
+         if record.vector.len() != dim {
+            return Err(SmgrepError::Store(format!(
                "vector dimension mismatch: expected {}, got {}",
-               DENSE_DIM,
+               dim,
                record.vector.len()
             )));
          }
@@ -544,7 +546,7 @@ impl LanceStore {
       let vector_values_array = vector_builder.finish();
       let vector_array = FixedSizeListArray::new(
          Arc::new(Field::new("item", DataType::Float32, true)),
-         DENSE_DIM as i32,
+         config::get().dense_dim as i32,
          Arc::new(vector_values_array),
          None,
       );
@@ -573,7 +575,7 @@ impl LanceStore {
          Arc::new(context_prev_array),
          Arc::new(context_next_array),
       ])
-      .map_err(|e| RsgrepError::Store(format!("failed to create record batch: {}", e)))
+      .map_err(|e| SmgrepError::Store(format!("failed to create record batch: {}", e)))
    }
 
    fn parse_chunk_type(s: &str) -> ChunkType {
@@ -613,14 +615,15 @@ impl LanceStore {
    }
 
    fn decode_colbert(colbert_bytes: &[u8], scale: f64) -> Vec<Vec<f32>> {
+      let dim = config::get().colbert_dim;
       let mut result = Vec::new();
       let mut i = 0;
 
-      while i + COLBERT_DIM <= colbert_bytes.len() {
-         let mut row = Vec::with_capacity(COLBERT_DIM);
+      while i + dim <= colbert_bytes.len() {
+         let mut row = Vec::with_capacity(dim);
          let mut is_padding = true;
 
-         for j in 0..COLBERT_DIM {
+         for j in 0..dim {
             let byte_val = colbert_bytes[i + j] as i8;
             let val = (byte_val as f32 / 127.0) * scale as f32;
             if val != 0.0 {
@@ -633,7 +636,7 @@ impl LanceStore {
             result.push(row);
          }
 
-         i += COLBERT_DIM;
+         i += dim;
       }
 
       result
@@ -660,7 +663,7 @@ impl super::Store for LanceStore {
          .add(RecordBatchOnce::new(batch))
          .execute()
          .await
-         .map_err(|e| RsgrepError::Store(format!("failed to add records: {}", e)))?;
+         .map_err(|e| SmgrepError::Store(format!("failed to add records: {}", e)))?;
 
       Ok(())
    }
@@ -706,32 +709,32 @@ impl super::Store for LanceStore {
       let code_results_stream = table
          .query()
          .nearest_to(query_vector)
-         .map_err(|e| RsgrepError::Store(format!("failed to create vector query: {}", e)))?
+         .map_err(|e| SmgrepError::Store(format!("failed to create vector query: {}", e)))?
          .limit(300)
          .only_if(&code_filter)
          .execute()
          .await
-         .map_err(|e| RsgrepError::Store(format!("failed to execute code search: {}", e)))?;
+         .map_err(|e| SmgrepError::Store(format!("failed to execute code search: {}", e)))?;
 
       let doc_results_stream = table
          .query()
          .nearest_to(query_vector)
-         .map_err(|e| RsgrepError::Store(format!("failed to create vector query: {}", e)))?
+         .map_err(|e| SmgrepError::Store(format!("failed to create vector query: {}", e)))?
          .only_if(&doc_filter)
          .limit(50)
          .execute()
          .await
-         .map_err(|e| RsgrepError::Store(format!("failed to execute doc search: {}", e)))?;
+         .map_err(|e| SmgrepError::Store(format!("failed to execute doc search: {}", e)))?;
 
       let code_batches: Vec<RecordBatch> = code_results_stream
          .try_collect()
          .await
-         .map_err(|e| RsgrepError::Store(format!("failed to collect code results: {}", e)))?;
+         .map_err(|e| SmgrepError::Store(format!("failed to collect code results: {}", e)))?;
 
       let doc_batches: Vec<RecordBatch> = doc_results_stream
          .try_collect()
          .await
-         .map_err(|e| RsgrepError::Store(format!("failed to collect doc results: {}", e)))?;
+         .map_err(|e| SmgrepError::Store(format!("failed to collect doc results: {}", e)))?;
 
       let fts_query = FullTextSearchQuery::new(query_text.to_owned());
       let mut fts_query_builder = table.query().full_text_search(fts_query);
@@ -755,17 +758,17 @@ impl super::Store for LanceStore {
       {
          let path_col = batch
             .column_by_name("path")
-            .ok_or_else(|| RsgrepError::Store("missing path column".to_string()))?
+            .ok_or_else(|| SmgrepError::Store("missing path column".to_string()))?
             .as_any()
             .downcast_ref::<StringArray>()
-            .ok_or_else(|| RsgrepError::Store("path column type mismatch".to_string()))?;
+            .ok_or_else(|| SmgrepError::Store("path column type mismatch".to_string()))?;
 
          let start_line_col = batch
             .column_by_name("start_line")
-            .ok_or_else(|| RsgrepError::Store("missing start_line column".to_string()))?
+            .ok_or_else(|| SmgrepError::Store("missing start_line column".to_string()))?
             .as_any()
             .downcast_ref::<UInt32Array>()
-            .ok_or_else(|| RsgrepError::Store("start_line type mismatch".to_string()))?;
+            .ok_or_else(|| SmgrepError::Store("start_line type mismatch".to_string()))?;
 
          for i in 0..batch.num_rows() {
             if path_col.is_null(i) {
@@ -805,7 +808,7 @@ impl super::Store for LanceStore {
          {
             large_str_array.value(row_idx).to_string()
          } else {
-            return Err(RsgrepError::Store("content column type mismatch".to_string()));
+            return Err(SmgrepError::Store("content column type mismatch".to_string()));
          };
 
          let start_line = batch
@@ -853,12 +856,12 @@ impl super::Store for LanceStore {
             .unwrap()
             .as_any()
             .downcast_ref::<FixedSizeListArray>()
-            .ok_or_else(|| RsgrepError::Store("vector column type mismatch".to_string()))?;
+            .ok_or_else(|| SmgrepError::Store("vector column type mismatch".to_string()))?;
          let vector_values = vector_list.value(row_idx);
          let vector_floats = vector_values
             .as_any()
             .downcast_ref::<Float32Array>()
-            .ok_or_else(|| RsgrepError::Store("vector values type mismatch".to_string()))?;
+            .ok_or_else(|| SmgrepError::Store("vector values type mismatch".to_string()))?;
 
          let doc_vector: Vec<f32> = (0..vector_floats.len())
             .map(|i| vector_floats.value(i))
@@ -951,7 +954,7 @@ impl super::Store for LanceStore {
       table
          .delete(&predicate)
          .await
-         .map_err(|e| RsgrepError::Store(format!("failed to delete file: {}", e)))?;
+         .map_err(|e| SmgrepError::Store(format!("failed to delete file: {}", e)))?;
 
       Ok(())
    }
@@ -979,7 +982,7 @@ impl super::Store for LanceStore {
          table
             .delete(&predicate)
             .await
-            .map_err(|e| RsgrepError::Store(format!("failed to delete files: {}", e)))?;
+            .map_err(|e| SmgrepError::Store(format!("failed to delete files: {}", e)))?;
       }
 
       Ok(())
@@ -991,7 +994,7 @@ impl super::Store for LanceStore {
       conn
          .drop_table(store_id, &[])
          .await
-         .map_err(|e| RsgrepError::Store(format!("failed to drop table: {}", e)))?;
+         .map_err(|e| SmgrepError::Store(format!("failed to drop table: {}", e)))?;
 
       self.connections.write().remove(store_id);
 
@@ -1003,7 +1006,7 @@ impl super::Store for LanceStore {
       let row_count = table
          .count_rows(None)
          .await
-         .map_err(|e| RsgrepError::Store(format!("failed to count rows: {}", e)))?;
+         .map_err(|e| SmgrepError::Store(format!("failed to count rows: {}", e)))?;
 
       Ok(StoreInfo {
          store_id:  store_id.to_string(),
@@ -1032,13 +1035,13 @@ impl super::Store for LanceStore {
             .select(lancedb::query::Select::Columns(vec!["path".to_string()]))
             .execute()
             .await
-            .map_err(|e| RsgrepError::Store(format!("failed to execute query: {}", e)))?,
+            .map_err(|e| SmgrepError::Store(format!("failed to execute query: {}", e)))?,
       };
 
       let batches: Vec<RecordBatch> = stream
          .try_collect()
          .await
-         .map_err(|e| RsgrepError::Store(format!("failed to collect results: {}", e)))?;
+         .map_err(|e| SmgrepError::Store(format!("failed to collect results: {}", e)))?;
 
       let mut paths = Vec::new();
       let mut seen = std::collections::HashSet::new();
@@ -1070,7 +1073,7 @@ impl super::Store for LanceStore {
       let row_count = table
          .count_rows(None)
          .await
-         .map_err(|e| RsgrepError::Store(format!("failed to count rows: {}", e)))?;
+         .map_err(|e| SmgrepError::Store(format!("failed to count rows: {}", e)))?;
 
       Ok(row_count == 0)
    }
@@ -1085,9 +1088,9 @@ impl super::Store for LanceStore {
          .map_err(|e| {
             let msg = e.to_string();
             if msg.contains("already exists") {
-               return RsgrepError::Store("index already exists".to_string());
+               return SmgrepError::Store("index already exists".to_string());
             }
-            RsgrepError::Store(format!("failed to create FTS index: {}", e))
+            SmgrepError::Store(format!("failed to create FTS index: {}", e))
          })?;
 
       Ok(())
@@ -1099,7 +1102,7 @@ impl super::Store for LanceStore {
       let row_count = table
          .count_rows(None)
          .await
-         .map_err(|e| RsgrepError::Store(format!("failed to count rows: {}", e)))?;
+         .map_err(|e| SmgrepError::Store(format!("failed to count rows: {}", e)))?;
 
       if row_count < 4000 {
          return Ok(());
@@ -1118,9 +1121,9 @@ impl super::Store for LanceStore {
          .map_err(|e| {
             let msg = e.to_string();
             if msg.contains("already exists") {
-               return RsgrepError::Store("index already exists".to_string());
+               return SmgrepError::Store("index already exists".to_string());
             }
-            RsgrepError::Store(format!("failed to create vector index: {}", e))
+            SmgrepError::Store(format!("failed to create vector index: {}", e))
          })?;
 
       Ok(())
@@ -1146,13 +1149,13 @@ impl super::Store for LanceStore {
             .select(lancedb::query::Select::Columns(vec!["path".to_string(), "hash".to_string()]))
             .execute()
             .await
-            .map_err(|e| RsgrepError::Store(format!("failed to execute query: {}", e)))?,
+            .map_err(|e| SmgrepError::Store(format!("failed to execute query: {}", e)))?,
       };
 
       let batches: Vec<RecordBatch> = stream
          .try_collect()
          .await
-         .map_err(|e| RsgrepError::Store(format!("failed to collect results: {}", e)))?;
+         .map_err(|e| SmgrepError::Store(format!("failed to collect results: {}", e)))?;
 
       let mut hashes = HashMap::new();
 

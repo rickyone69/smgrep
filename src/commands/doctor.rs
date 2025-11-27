@@ -4,19 +4,19 @@ use anyhow::{Context, Result};
 use console::style;
 
 use crate::{
-   config::{COLBERT_MODEL, DENSE_MODEL},
+   config,
    grammar::{GRAMMAR_URLS, GrammarManager},
 };
 
 pub async fn execute() -> Result<()> {
-   println!("{}\n", style("rsgrep Doctor").bold());
+   println!("{}\n", style("smgrep Doctor").bold());
 
    let home = directories::UserDirs::new()
       .context("failed to get user directories")?
       .home_dir()
       .to_path_buf();
 
-   let root = home.join(".rsgrep");
+   let root = home.join(".smgrep");
    let models = root.join("models");
    let data = root.join("data");
    let grammars = root.join("grammars");
@@ -30,7 +30,9 @@ pub async fn execute() -> Result<()> {
 
    let mut all_good = true;
 
-   for model_id in &[DENSE_MODEL, COLBERT_MODEL] {
+   let cfg = config::get();
+   let model_ids = [&cfg.dense_model, &cfg.colbert_model];
+   for model_id in model_ids {
       let model_path = models.join(model_id.replace('/', "--"));
       let exists = model_path.exists();
 
@@ -54,11 +56,7 @@ pub async fn execute() -> Result<()> {
    let grammar_manager = match GrammarManager::with_auto_download(false) {
       Ok(gm) => Some(gm),
       Err(_) => {
-         println!(
-            "{} Grammar manager: {}",
-            style("✗").red(),
-            style("failed to initialize").dim()
-         );
+         println!("{} Grammar manager: {}", style("✗").red(), style("failed to initialize").dim());
          all_good = false;
          None
       },
@@ -125,7 +123,7 @@ pub async fn execute() -> Result<()> {
    } else {
       println!(
          "\n{}",
-         style("✗ Some components are missing. Run 'rsgrep setup' to download them.")
+         style("✗ Some components are missing. Run 'smgrep setup' to download them.")
             .red()
             .bold()
       );

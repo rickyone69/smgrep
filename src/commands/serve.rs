@@ -18,7 +18,7 @@ use tokio::{
 };
 
 use crate::{
-   chunker,
+   chunker, config,
    embed::Embedder,
    file::{FileSystem, FileWatcher, LocalFileSystem, WatchAction},
    ipc::{self, Request, Response, ServerStatus},
@@ -26,9 +26,6 @@ use crate::{
    store::Store,
    types::{PreparedChunk, SearchResponse, SearchStatus, VectorRecord},
 };
-
-const IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
-const IDLE_CHECK_INTERVAL: Duration = Duration::from_secs(60);
 
 struct ServerState {
    store:         Arc<dyn Store>,
@@ -73,7 +70,7 @@ pub async fn execute(path: Option<PathBuf>, store_id: Option<String>) -> Result<
 
    let listener = UnixListener::bind(&socket_path).context("failed to bind socket")?;
 
-   println!("{}", style("Starting rsgrep server...").green().bold());
+   println!("{}", style("Starting smgrep server...").green().bold());
    println!("Socket: {}", style(socket_path.display()).cyan());
    println!("Path: {}", style(serve_path.display()).dim());
    println!("Store ID: {}", style(&resolved_store_id).cyan());
@@ -145,10 +142,13 @@ pub async fn execute(path: Option<PathBuf>, store_id: Option<String>) -> Result<
 
    let idle_state = Arc::clone(&state);
    let idle_shutdown = shutdown_tx.clone();
+   let cfg = config::get();
+   let idle_timeout = Duration::from_secs(cfg.idle_timeout_secs);
+   let idle_check_interval = Duration::from_secs(cfg.idle_check_interval_secs);
    tokio::spawn(async move {
       loop {
-         tokio::time::sleep(IDLE_CHECK_INTERVAL).await;
-         if idle_state.idle_duration() > IDLE_TIMEOUT {
+         tokio::time::sleep(idle_check_interval).await;
+         if idle_state.idle_duration() > idle_timeout {
             println!("{}", style("Idle timeout reached, shutting down...").yellow());
             let _ = idle_shutdown.send(true);
             break;

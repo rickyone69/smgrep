@@ -1,14 +1,14 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "rsgrep",
+  "name": "smgrep",
   "owner": {
     "name": "can1357",
     "email": "me@can.ac"
   },
   "plugins": [
     {
-      "name": "rsgrep",
-      "source": "./plugins/rsgrep",
+      "name": "smgrep",
+      "source": "./plugins/smgrep",
       "description": "Semantic code search for Claude Code. High-performance Rust implementation with automatic project indexing.",
       "version": "0.1.0",
       "author": {
@@ -16,7 +16,7 @@
         "email": "me@can.ac"
       },
       "skills": [
-        "./skills/rsgrep"
+        "./skills/smgrep"
       ]
     }
   ]

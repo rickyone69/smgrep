@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use git2::Repository;
 
-use crate::error::{Result, RsgrepError};
+use crate::error::{Result, SmgrepError};
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
    "ts",
@@ -117,13 +117,13 @@ impl LocalFileSystem {
 
    fn get_git_files(&self, root: &Path) -> Result<Vec<PathBuf>> {
       let repo = Repository::open(root)
-         .map_err(|e| RsgrepError::Git(format!("failed to open repository: {}", e)))?;
+         .map_err(|e| SmgrepError::Git(format!("failed to open repository: {}", e)))?;
 
       let mut files = Vec::new();
 
       let index = repo
          .index()
-         .map_err(|e| RsgrepError::Git(format!("failed to read index: {}", e)))?;
+         .map_err(|e| SmgrepError::Git(format!("failed to read index: {}", e)))?;
 
       for entry in index.iter() {
          let path_bytes = entry.path.as_slice();

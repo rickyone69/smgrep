@@ -63,7 +63,7 @@ impl DaemonConn {
             spawn_daemon(&cwd)?;
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             UnixStream::connect(&socket_path).await?
-         }
+         },
       };
 
       Ok(Self { stream, buffer: SocketBuffer::new(), cwd })
@@ -71,9 +71,9 @@ impl DaemonConn {
 
    async fn search(&mut self, query: &str, limit: usize) -> Result<String> {
       let request = Request::Search {
-         query:  query.to_string(),
+         query: query.to_string(),
          limit,
-         path:   Some(self.cwd.to_string_lossy().to_string()),
+         path: Some(self.cwd.to_string_lossy().to_string()),
          rerank: true,
       };
 
@@ -94,7 +94,7 @@ impl DaemonConn {
                output = format!("No results found for '{}'", query);
             }
             Ok(output)
-         }
+         },
          Response::Error { message } => anyhow::bail!("Search failed: {}", message),
          _ => anyhow::bail!("Unexpected response"),
       }
@@ -123,7 +123,7 @@ pub async fn execute() -> Result<()> {
             writeln!(stdout, "{}", serde_json::to_string(&response)?)?;
             stdout.flush()?;
             continue;
-         }
+         },
       };
 
       let id = request.id.clone().unwrap_or(Value::Null);
@@ -152,7 +152,7 @@ async fn handle_request(
             "tools": {}
          },
          "serverInfo": {
-            "name": "rsgrep",
+            "name": "smgrep",
             "version": env!("CARGO_PKG_VERSION")
          }
       })),
@@ -182,8 +182,16 @@ async fn handle_request(
       })),
 
       "tools/call" => {
-         let name = request.params.get("name").and_then(|v| v.as_str()).unwrap_or("");
-         let args = request.params.get("arguments").cloned().unwrap_or(json!({}));
+         let name = request
+            .params
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+         let args = request
+            .params
+            .get("arguments")
+            .cloned()
+            .unwrap_or(json!({}));
 
          match name {
             "sem_search" => {
@@ -197,10 +205,10 @@ async fn handle_request(
                      "text": result
                   }]
                }))
-            }
+            },
             _ => anyhow::bail!("Unknown tool: {}", name),
          }
-      }
+      },
 
       _ => anyhow::bail!("Unknown method: {}", request.method),
    }
@@ -224,7 +232,7 @@ async fn do_search_with_retry(
          // Connection failed, reconnect and retry once
          *conn = Some(DaemonConn::connect(cwd.clone()).await?);
          conn.as_mut().unwrap().search(query, limit).await
-      }
+      },
    }
 }
 

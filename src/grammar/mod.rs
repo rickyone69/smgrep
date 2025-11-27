@@ -7,7 +7,7 @@ use std::{
 use parking_lot::RwLock;
 use tree_sitter::{Language, Parser, WasmStore, wasmtime};
 
-use crate::error::{Result, RsgrepError};
+use crate::error::{Result, SmgrepError};
 
 pub const GRAMMAR_URLS: &[(&str, &str)] = &[
    ("typescript", "https://github.com/nicholasjchua/tree-sitter-typescript/releases/download/v0.25.5/tree-sitter-typescript.wasm"),
@@ -80,13 +80,13 @@ impl GrammarManager {
 
    pub fn with_auto_download(auto_download: bool) -> Result<Self> {
       let home = directories::UserDirs::new()
-         .ok_or_else(|| RsgrepError::Config("failed to get user directories".into()))?
+         .ok_or_else(|| SmgrepError::Config("failed to get user directories".into()))?
          .home_dir()
          .to_path_buf();
 
-      let grammars_dir = home.join(".rsgrep").join("grammars");
+      let grammars_dir = home.join(".smgrep").join("grammars");
       fs::create_dir_all(&grammars_dir)
-         .map_err(|e| RsgrepError::Config(format!("failed to create grammars directory: {}", e)))?;
+         .map_err(|e| SmgrepError::Config(format!("failed to create grammars directory: {}", e)))?;
 
       let engine = wasmtime::Engine::default();
 
@@ -143,33 +143,36 @@ impl GrammarManager {
 
    fn load_language_from_file(&self, lang: &str) -> Result<Language> {
       let wasm_path = self.grammar_path(lang);
-      let wasm_bytes =
-         fs::read(&wasm_path).map_err(|e| RsgrepError::Chunker(format!("failed to read WASM file: {}", e)))?;
+      let wasm_bytes = fs::read(&wasm_path)
+         .map_err(|e| SmgrepError::Chunker(format!("failed to read WASM file: {}", e)))?;
 
       let mut store = WasmStore::new(&self.engine)
-         .map_err(|e| RsgrepError::Chunker(format!("failed to create WASM store: {}", e)))?;
+         .map_err(|e| SmgrepError::Chunker(format!("failed to create WASM store: {}", e)))?;
 
       let language = store
          .load_language(lang, &wasm_bytes)
-         .map_err(|e| RsgrepError::Chunker(format!("failed to load language {}: {}", lang, e)))?;
+         .map_err(|e| SmgrepError::Chunker(format!("failed to load language {}: {}", lang, e)))?;
 
       Ok(language)
    }
 
    fn download_grammar_sync(&self, lang: &str) -> Result<()> {
-      let url = Self::grammar_url(lang).ok_or_else(|| RsgrepError::Config(format!("unknown language: {}", lang)))?;
+      let url = Self::grammar_url(lang)
+         .ok_or_else(|| SmgrepError::Config(format!("unknown language: {}", lang)))?;
       let dest = self.grammar_path(lang);
-      let temp_dest = self.grammars_dir.join(format!(".tree-sitter-{}.wasm.tmp", lang));
+      let temp_dest = self
+         .grammars_dir
+         .join(format!(".tree-sitter-{}.wasm.tmp", lang));
 
       tracing::info!("downloading grammar for {} from {}", lang, url);
 
       let download = async {
          let response = reqwest::get(url)
             .await
-            .map_err(|e| RsgrepError::Config(format!("failed to download {}: {}", lang, e)))?;
+            .map_err(|e| SmgrepError::Config(format!("failed to download {}: {}", lang, e)))?;
 
          if !response.status().is_success() {
-            return Err(RsgrepError::Config(format!(
+            return Err(SmgrepError::Config(format!(
                "failed to download {}: HTTP {}",
                lang,
                response.status()
@@ -179,22 +182,22 @@ impl GrammarManager {
          let bytes = response
             .bytes()
             .await
-            .map_err(|e| RsgrepError::Config(format!("failed to read response: {}", e)))?;
+            .map_err(|e| SmgrepError::Config(format!("failed to read response: {}", e)))?;
 
          fs::write(&temp_dest, &bytes)
-            .map_err(|e| RsgrepError::Config(format!("failed to write WASM file: {}", e)))?;
+            .map_err(|e| SmgrepError::Config(format!("failed to write WASM file: {}", e)))?;
 
          fs::rename(&temp_dest, &dest)
-            .map_err(|e| RsgrepError::Config(format!("failed to rename WASM file: {}", e)))?;
+            .map_err(|e| SmgrepError::Config(format!("failed to rename WASM file: {}", e)))?;
 
-         Ok::<_, RsgrepError>(())
+         Ok::<_, SmgrepError>(())
       };
 
       if let Ok(handle) = tokio::runtime::Handle::try_current() {
          tokio::task::block_in_place(|| handle.block_on(download))?;
       } else {
          tokio::runtime::Runtime::new()
-            .map_err(|e| RsgrepError::Config(format!("failed to create runtime: {}", e)))?
+            .map_err(|e| SmgrepError::Config(format!("failed to create runtime: {}", e)))?
             .block_on(download)?;
       }
 
@@ -268,22 +271,23 @@ impl GrammarManager {
    pub fn create_parser_with_store(&self) -> Result<(Parser, WasmStore)> {
       let parser = Parser::new();
       let store = WasmStore::new(&self.engine)
-         .map_err(|e| RsgrepError::Chunker(format!("failed to create WASM store: {}", e)))?;
+         .map_err(|e| SmgrepError::Chunker(format!("failed to create WASM store: {}", e)))?;
 
       Ok((parser, store))
    }
 
    pub async fn download_grammar(&self, lang: &str) -> Result<()> {
-      let url = Self::grammar_url(lang).ok_or_else(|| RsgrepError::Config(format!("unknown language: {}", lang)))?;
+      let url = Self::grammar_url(lang)
+         .ok_or_else(|| SmgrepError::Config(format!("unknown language: {}", lang)))?;
 
       let dest = self.grammar_path(lang);
 
       let response = reqwest::get(url)
          .await
-         .map_err(|e| RsgrepError::Config(format!("failed to download {}: {}", lang, e)))?;
+         .map_err(|e| SmgrepError::Config(format!("failed to download {}: {}", lang, e)))?;
 
       if !response.status().is_success() {
-         return Err(RsgrepError::Config(format!(
+         return Err(SmgrepError::Config(format!(
             "failed to download {}: HTTP {}",
             lang,
             response.status()
@@ -293,9 +297,10 @@ impl GrammarManager {
       let bytes = response
          .bytes()
          .await
-         .map_err(|e| RsgrepError::Config(format!("failed to read response: {}", e)))?;
+         .map_err(|e| SmgrepError::Config(format!("failed to read response: {}", e)))?;
 
-      fs::write(&dest, &bytes).map_err(|e| RsgrepError::Config(format!("failed to write WASM file: {}", e)))?;
+      fs::write(&dest, &bytes)
+         .map_err(|e| SmgrepError::Config(format!("failed to write WASM file: {}", e)))?;
 
       Ok(())
    }

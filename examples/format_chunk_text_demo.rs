@@ -1,4 +1,4 @@
-use rsgrep::format::format_chunk_text;
+use smgrep::format::format_chunk_text;
 
 fn main() {
    let context = vec![

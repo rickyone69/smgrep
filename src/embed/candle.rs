@@ -14,12 +14,9 @@ use parking_lot::RwLock;
 use tokenizers::Tokenizer;
 
 use crate::{
-   config::{
-      self, COLBERT_DIM, COLBERT_MODEL, DENSE_MODEL, QUERY_PREFIX, batch_size, debug_embed,
-      debug_models,
-   },
+   config,
    embed::{Embedder, HybridEmbedding, QueryEmbedding},
-   error::{Result, RsgrepError},
+   error::{Result, SmgrepError},
 };
 
 const MAX_SEQ_LEN_DENSE: usize = 256;
@@ -53,7 +50,8 @@ fn is_oom_error(err: &str) -> bool {
 
 impl CandleEmbedder {
    pub fn new() -> Result<Self> {
-      let device = if config::disable_gpu() {
+      let cfg = config::get();
+      let device = if cfg.disable_gpu {
          Device::Cpu
       } else {
          Device::cuda_if_available(0).unwrap_or(Device::Cpu)
@@ -64,7 +62,7 @@ impl CandleEmbedder {
          tracing::info!("using CPU device");
       }
 
-      let initial_batch = batch_size();
+      let initial_batch = cfg.batch_size();
 
       Ok(Self {
          dense_model: Arc::new(RwLock::new(None)),
@@ -117,30 +115,31 @@ impl CandleEmbedder {
    }
 
    fn load_dense_model(device: &Device) -> Result<(BertModel, Tokenizer)> {
-      let model_path = Self::download_model(DENSE_MODEL)?;
+      let cfg = config::get();
+      let model_path = Self::download_model(&cfg.dense_model)?;
 
-      if debug_models() {
+      if cfg.debug_models {
          tracing::info!("loading dense model from {:?}", model_path);
       }
 
       let tokenizer = Tokenizer::from_file(model_path.join("tokenizer.json"))
-         .map_err(|e| RsgrepError::Embedding(format!("failed to load tokenizer: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to load tokenizer: {}", e)))?;
 
       let config: BertConfig = serde_json::from_str(
          &std::fs::read_to_string(model_path.join("config.json"))
-            .map_err(|e| RsgrepError::Embedding(format!("failed to read config: {}", e)))?,
+            .map_err(|e| SmgrepError::Embedding(format!("failed to read config: {}", e)))?,
       )
-      .map_err(|e| RsgrepError::Embedding(format!("failed to parse config: {}", e)))?;
+      .map_err(|e| SmgrepError::Embedding(format!("failed to parse config: {}", e)))?;
 
       let vb = unsafe {
          VarBuilder::from_mmaped_safetensors(&[model_path.join("model.safetensors")], DTYPE, device)
-            .map_err(|e| RsgrepError::Embedding(format!("failed to load weights: {}", e)))?
+            .map_err(|e| SmgrepError::Embedding(format!("failed to load weights: {}", e)))?
       };
 
       let bert = BertModel::load(vb, &config)
-         .map_err(|e| RsgrepError::Embedding(format!("failed to load model: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to load model: {}", e)))?;
 
-      if debug_models() {
+      if cfg.debug_models {
          tracing::info!("dense model loaded");
       }
 
@@ -148,37 +147,38 @@ impl CandleEmbedder {
    }
 
    fn load_colbert_model(device: &Device) -> Result<(BertModel, Linear, Tokenizer)> {
-      let model_path = Self::download_model(COLBERT_MODEL)?;
+      let cfg = config::get();
+      let model_path = Self::download_model(&cfg.colbert_model)?;
 
-      if debug_models() {
+      if cfg.debug_models {
          tracing::info!("loading colbert model from {:?}", model_path);
       }
 
       let tokenizer = Tokenizer::from_file(model_path.join("tokenizer.json"))
-         .map_err(|e| RsgrepError::Embedding(format!("failed to load tokenizer: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to load tokenizer: {}", e)))?;
 
       let config: BertConfig = serde_json::from_str(
          &std::fs::read_to_string(model_path.join("config.json"))
-            .map_err(|e| RsgrepError::Embedding(format!("failed to read config: {}", e)))?,
+            .map_err(|e| SmgrepError::Embedding(format!("failed to read config: {}", e)))?,
       )
-      .map_err(|e| RsgrepError::Embedding(format!("failed to parse config: {}", e)))?;
+      .map_err(|e| SmgrepError::Embedding(format!("failed to parse config: {}", e)))?;
 
       let vb = unsafe {
          VarBuilder::from_mmaped_safetensors(&[model_path.join("model.safetensors")], DTYPE, device)
-            .map_err(|e| RsgrepError::Embedding(format!("failed to load weights: {}", e)))?
+            .map_err(|e| SmgrepError::Embedding(format!("failed to load weights: {}", e)))?
       };
 
       let bert = BertModel::load(vb.clone(), &config)
-         .map_err(|e| RsgrepError::Embedding(format!("failed to load colbert model: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to load colbert model: {}", e)))?;
 
-      let projection = candle_nn::linear_no_bias(config.hidden_size, COLBERT_DIM, vb.pp("linear"))
-         .map_err(|e| RsgrepError::Embedding(format!("failed to load projection: {}", e)))?;
+      let projection = candle_nn::linear_no_bias(config.hidden_size, cfg.colbert_dim, vb.pp("linear"))
+         .map_err(|e| SmgrepError::Embedding(format!("failed to load projection: {}", e)))?;
 
-      if debug_models() {
+      if cfg.debug_models {
          tracing::info!(
             "colbert model loaded (hidden={}, proj={})",
             config.hidden_size,
-            COLBERT_DIM
+            cfg.colbert_dim
          );
       }
 
@@ -188,10 +188,10 @@ impl CandleEmbedder {
    fn download_model(model_id: &str) -> Result<PathBuf> {
       let cache_dir = crate::config::model_dir();
       std::fs::create_dir_all(&cache_dir)
-         .map_err(|e| RsgrepError::Embedding(format!("failed to create model cache: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to create model cache: {}", e)))?;
 
       let api = Api::new()
-         .map_err(|e| RsgrepError::Embedding(format!("failed to initialize hf_hub API: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to initialize hf_hub API: {}", e)))?;
 
       let repo = api.repo(Repo::new(model_id.to_string(), RepoType::Model));
 
@@ -200,8 +200,8 @@ impl CandleEmbedder {
 
       for filename in &model_files {
          let path = repo.get(filename).map_err(|e| {
-            RsgrepError::Embedding(format!(
-               "failed to download {} from {}: {}. Run 'rsgrep setup' to download models.",
+            SmgrepError::Embedding(format!(
+               "failed to download {} from {}: {}. Run 'smgrep setup' to download models.",
                filename, model_id, e
             ))
          })?;
@@ -210,7 +210,7 @@ impl CandleEmbedder {
 
       paths[0]
          .parent()
-         .ok_or_else(|| RsgrepError::Embedding("invalid model path".to_string()))
+         .ok_or_else(|| SmgrepError::Embedding("invalid model path".to_string()))
          .map(|p| p.to_path_buf())
    }
 
@@ -218,12 +218,12 @@ impl CandleEmbedder {
       let state = self.dense_model.read();
       let state = state
          .as_ref()
-         .ok_or_else(|| RsgrepError::Embedding("dense model not loaded".to_string()))?;
+         .ok_or_else(|| SmgrepError::Embedding("dense model not loaded".to_string()))?;
 
       let encoding = state
          .tokenizer
          .encode(text, true)
-         .map_err(|e| RsgrepError::Embedding(format!("tokenization failed: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("tokenization failed: {}", e)))?;
 
       let mut token_ids = encoding.get_ids().to_vec();
       let mut attention_mask = vec![1u32; token_ids.len()];
@@ -240,7 +240,7 @@ impl CandleEmbedder {
       let state = self.dense_model.read();
       let state = state
          .as_ref()
-         .ok_or_else(|| RsgrepError::Embedding("dense model not loaded".to_string()))?;
+         .ok_or_else(|| SmgrepError::Embedding("dense model not loaded".to_string()))?;
 
       texts
          .iter()
@@ -248,7 +248,7 @@ impl CandleEmbedder {
             let encoding = state
                .tokenizer
                .encode(text.as_str(), true)
-               .map_err(|e| RsgrepError::Embedding(format!("tokenization failed: {}", e)))?;
+               .map_err(|e| SmgrepError::Embedding(format!("tokenization failed: {}", e)))?;
 
             let mut token_ids = encoding.get_ids().to_vec();
             let mut attention_mask = vec![1u32; token_ids.len()];
@@ -267,12 +267,12 @@ impl CandleEmbedder {
       let state = self.colbert_model.read();
       let state = state
          .as_ref()
-         .ok_or_else(|| RsgrepError::Embedding("colbert model not loaded".to_string()))?;
+         .ok_or_else(|| SmgrepError::Embedding("colbert model not loaded".to_string()))?;
 
       let encoding = state
          .tokenizer
          .encode(text, true)
-         .map_err(|e| RsgrepError::Embedding(format!("tokenization failed: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("tokenization failed: {}", e)))?;
 
       let mut token_ids = encoding.get_ids().to_vec();
       let mut attention_mask = vec![1u32; token_ids.len()];
@@ -289,7 +289,7 @@ impl CandleEmbedder {
       let state = self.colbert_model.read();
       let state = state
          .as_ref()
-         .ok_or_else(|| RsgrepError::Embedding("colbert model not loaded".to_string()))?;
+         .ok_or_else(|| SmgrepError::Embedding("colbert model not loaded".to_string()))?;
 
       texts
          .iter()
@@ -297,7 +297,7 @@ impl CandleEmbedder {
             let encoding = state
                .tokenizer
                .encode(text.as_str(), true)
-               .map_err(|e| RsgrepError::Embedding(format!("tokenization failed: {}", e)))?;
+               .map_err(|e| SmgrepError::Embedding(format!("tokenization failed: {}", e)))?;
 
             let mut token_ids = encoding.get_ids().to_vec();
             let mut attention_mask = vec![1u32; token_ids.len()];
@@ -350,34 +350,34 @@ impl CandleEmbedder {
       let (token_ids, attention_mask) = self.tokenize_dense(text)?;
 
       let token_ids_tensor = Tensor::new(&token_ids[..], &self.device)
-         .map_err(|e| RsgrepError::Embedding(format!("failed to create tensor: {}", e)))?
+         .map_err(|e| SmgrepError::Embedding(format!("failed to create tensor: {}", e)))?
          .unsqueeze(0)
-         .map_err(|e| RsgrepError::Embedding(format!("failed to unsqueeze: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to unsqueeze: {}", e)))?;
 
       let attention_mask_tensor = Tensor::new(&attention_mask[..], &self.device)
-         .map_err(|e| RsgrepError::Embedding(format!("failed to create mask: {}", e)))?
+         .map_err(|e| SmgrepError::Embedding(format!("failed to create mask: {}", e)))?
          .unsqueeze(0)
-         .map_err(|e| RsgrepError::Embedding(format!("failed to unsqueeze: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to unsqueeze: {}", e)))?;
 
       let state = self.dense_model.read();
       let state = state
          .as_ref()
-         .ok_or_else(|| RsgrepError::Embedding("dense model not loaded".to_string()))?;
+         .ok_or_else(|| SmgrepError::Embedding("dense model not loaded".to_string()))?;
 
       let embeddings = state
          .bert
          .forward(&token_ids_tensor, &attention_mask_tensor, None)
-         .map_err(|e| RsgrepError::Embedding(format!("forward pass failed: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("forward pass failed: {}", e)))?;
 
       let cls_embedding = embeddings
          .get(0)
-         .map_err(|e| RsgrepError::Embedding(format!("failed to get batch: {}", e)))?
+         .map_err(|e| SmgrepError::Embedding(format!("failed to get batch: {}", e)))?
          .get(0)
-         .map_err(|e| RsgrepError::Embedding(format!("failed to extract CLS: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to extract CLS: {}", e)))?;
 
       let mut dense_vec: Vec<f32> = cls_embedding
          .to_vec1()
-         .map_err(|e| RsgrepError::Embedding(format!("failed to convert to vec: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to convert to vec: {}", e)))?;
 
       Self::normalize_l2(&mut dense_vec);
       Ok(dense_vec)
@@ -409,28 +409,28 @@ impl CandleEmbedder {
       }
 
       let token_ids_tensor = Tensor::new(&all_token_ids[..], &self.device)
-         .map_err(|e| RsgrepError::Embedding(format!("failed to create tensor: {}", e)))?
+         .map_err(|e| SmgrepError::Embedding(format!("failed to create tensor: {}", e)))?
          .reshape(&[batch_size, max_len])
-         .map_err(|e| RsgrepError::Embedding(format!("failed to reshape: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to reshape: {}", e)))?;
 
       let attention_mask_tensor = Tensor::new(&all_attention_masks[..], &self.device)
-         .map_err(|e| RsgrepError::Embedding(format!("failed to create mask: {}", e)))?
+         .map_err(|e| SmgrepError::Embedding(format!("failed to create mask: {}", e)))?
          .reshape(&[batch_size, max_len])
-         .map_err(|e| RsgrepError::Embedding(format!("failed to reshape: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to reshape: {}", e)))?;
 
       let state = self.dense_model.read();
       let state = state
          .as_ref()
-         .ok_or_else(|| RsgrepError::Embedding("dense model not loaded".to_string()))?;
+         .ok_or_else(|| SmgrepError::Embedding("dense model not loaded".to_string()))?;
 
       let embeddings = state
          .bert
          .forward(&token_ids_tensor, &attention_mask_tensor, None)
-         .map_err(|e| RsgrepError::Embedding(format!("forward pass failed: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("forward pass failed: {}", e)))?;
 
       let all_embeddings: Vec<Vec<Vec<f32>>> = embeddings
          .to_vec3()
-         .map_err(|e| RsgrepError::Embedding(format!("failed to convert: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to convert: {}", e)))?;
 
       let mut results = Vec::with_capacity(batch_size);
       for batch_emb in &all_embeddings {
@@ -447,43 +447,43 @@ impl CandleEmbedder {
       let seq_len = token_ids.len();
 
       let token_ids_tensor = Tensor::new(&token_ids[..], &self.device)
-         .map_err(|e| RsgrepError::Embedding(format!("failed to create tensor: {}", e)))?
+         .map_err(|e| SmgrepError::Embedding(format!("failed to create tensor: {}", e)))?
          .unsqueeze(0)
-         .map_err(|e| RsgrepError::Embedding(format!("failed to unsqueeze: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to unsqueeze: {}", e)))?;
 
       let attention_mask_tensor = Tensor::new(&attention_mask[..], &self.device)
-         .map_err(|e| RsgrepError::Embedding(format!("failed to create mask: {}", e)))?
+         .map_err(|e| SmgrepError::Embedding(format!("failed to create mask: {}", e)))?
          .unsqueeze(0)
-         .map_err(|e| RsgrepError::Embedding(format!("failed to unsqueeze: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to unsqueeze: {}", e)))?;
 
       let state = self.colbert_model.read();
       let state = state
          .as_ref()
-         .ok_or_else(|| RsgrepError::Embedding("colbert model not loaded".to_string()))?;
+         .ok_or_else(|| SmgrepError::Embedding("colbert model not loaded".to_string()))?;
 
       let embeddings = state
          .bert
          .forward(&token_ids_tensor, &attention_mask_tensor, None)
-         .map_err(|e| RsgrepError::Embedding(format!("forward pass failed: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("forward pass failed: {}", e)))?;
 
       let projected = state
          .projection
          .forward(&embeddings)
-         .map_err(|e| RsgrepError::Embedding(format!("projection failed: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("projection failed: {}", e)))?;
 
       let batch_embeddings = projected
          .get(0)
-         .map_err(|e| RsgrepError::Embedding(format!("failed to get batch: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to get batch: {}", e)))?;
 
       let mut token_embeddings = Vec::with_capacity(seq_len);
       for i in 0..seq_len {
          let token_emb = batch_embeddings
             .get(i)
-            .map_err(|e| RsgrepError::Embedding(format!("failed to extract token {}: {}", i, e)))?;
+            .map_err(|e| SmgrepError::Embedding(format!("failed to extract token {}: {}", i, e)))?;
 
          let mut vec: Vec<f32> = token_emb
             .to_vec1()
-            .map_err(|e| RsgrepError::Embedding(format!("failed to convert token {}: {}", i, e)))?;
+            .map_err(|e| SmgrepError::Embedding(format!("failed to convert token {}: {}", i, e)))?;
 
          Self::normalize_l2(&mut vec);
          token_embeddings.push(vec);
@@ -518,37 +518,37 @@ impl CandleEmbedder {
       }
 
       let token_ids_tensor = Tensor::new(&all_token_ids[..], &self.device)
-         .map_err(|e| RsgrepError::Embedding(format!("failed to create tensor: {}", e)))?
+         .map_err(|e| SmgrepError::Embedding(format!("failed to create tensor: {}", e)))?
          .reshape(&[batch_size, max_len])
-         .map_err(|e| RsgrepError::Embedding(format!("failed to reshape: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to reshape: {}", e)))?;
 
       let attention_mask_tensor = Tensor::new(&all_attention_masks[..], &self.device)
-         .map_err(|e| RsgrepError::Embedding(format!("failed to create mask: {}", e)))?
+         .map_err(|e| SmgrepError::Embedding(format!("failed to create mask: {}", e)))?
          .reshape(&[batch_size, max_len])
-         .map_err(|e| RsgrepError::Embedding(format!("failed to reshape: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to reshape: {}", e)))?;
 
       let state = self.colbert_model.read();
       let state = state
          .as_ref()
-         .ok_or_else(|| RsgrepError::Embedding("colbert model not loaded".to_string()))?;
+         .ok_or_else(|| SmgrepError::Embedding("colbert model not loaded".to_string()))?;
 
       let embeddings = state
          .bert
          .forward(&token_ids_tensor, &attention_mask_tensor, None)
-         .map_err(|e| RsgrepError::Embedding(format!("forward pass failed: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("forward pass failed: {}", e)))?;
 
       let projected = state
          .projection
          .forward(&embeddings)
-         .map_err(|e| RsgrepError::Embedding(format!("projection failed: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("projection failed: {}", e)))?;
 
       let projected_f32 = projected
          .to_dtype(DType::F32)
-         .map_err(|e| RsgrepError::Embedding(format!("dtype conversion failed: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("dtype conversion failed: {}", e)))?;
 
       let all_embeddings: Vec<Vec<Vec<f32>>> = projected_f32
          .to_vec3()
-         .map_err(|e| RsgrepError::Embedding(format!("failed to convert: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to convert: {}", e)))?;
 
       let mut results = Vec::with_capacity(batch_size);
       for (i, batch_emb) in all_embeddings.into_iter().enumerate() {
@@ -633,20 +633,21 @@ impl Embedder for CandleEmbedder {
       self.ensure_dense_loaded()?;
       self.ensure_colbert_loaded()?;
 
-      let query_text = if QUERY_PREFIX.is_empty() {
+      let cfg = config::get();
+      let query_text = if cfg.query_prefix.is_empty() {
          text.to_string()
       } else {
-         format!("{}{}", QUERY_PREFIX, text)
+         format!("{}{}", cfg.query_prefix, text)
       };
 
-      if debug_embed() {
+      if cfg.debug_embed {
          tracing::info!("encoding query: {:?}", text);
       }
 
       let dense = self.compute_dense_embedding(&query_text)?;
       let colbert = self.compute_colbert_embedding(&query_text)?;
 
-      if debug_embed() {
+      if cfg.debug_embed {
          tracing::info!(
             "query embedding - dense_dim: {}, colbert_tokens: {}",
             dense.len(),

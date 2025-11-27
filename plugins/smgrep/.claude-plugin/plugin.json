@@ -1,5 +1,5 @@
 {
-  "name": "rsgrep",
+  "name": "smgrep",
   "version": "0.1.0",
   "description": "Semantic code search for Claude Code. Automatically indexes your project and provides intelligent search capabilities.",
   "author": {
@@ -7,8 +7,8 @@
     "email": "me@can.ac"
   },
   "hooks": "./hooks.json",
-  "homepage": "https://github.com/can1357/rsgrep",
-  "repository": "https://github.com/can1357/rsgrep",
+  "homepage": "https://github.com/can1357/smgrep",
+  "repository": "https://github.com/can1357/smgrep",
   "license": "Apache-2.0",
   "keywords": [
     "search",

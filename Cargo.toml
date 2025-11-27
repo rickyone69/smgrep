@@ -1,13 +1,20 @@
 [package]
-name = "rsgrep"
-version = "0.1.0"
+name = "smgrep"
+version = "0.2.0"
 edition = "2024"
-description = "Semantic code search tool - Rust port of osgrep"
-license = "MIT"
-repository = "https://github.com/kris-hansen/osgrep"
+description = "Semantic code search tool with GPU acceleration - Rust port of osgrep"
+license = "Apache-2.0"
+repository = "https://github.com/can1357/smgrep"
+homepage = "https://github.com/can1357/smgrep"
+documentation = "https://github.com/can1357/smgrep"
+readme = "README.md"
+keywords = ["search", "semantic", "code", "grep", "embeddings"]
+categories = ["command-line-utilities", "development-tools", "text-processing"]
+authors = ["Can Bölük <me@can.ac>"]
+rust-version = "1.85"
 
 [[bin]]
-name = "rsgrep"
+name = "smgrep"
 path = "src/main.rs"
 
 [features]
@@ -64,6 +71,7 @@ postcard = { version = "1", features = ["alloc"] }
 # Utilities
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+figment = { version = "0.10", features = ["toml", "env"] }
 uuid = { version = "1", features = ["v4"] }
 sha2 = "0.10"
 thiserror = "2"

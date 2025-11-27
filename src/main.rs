@@ -2,14 +2,14 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use rsgrep::commands;
+use smgrep::commands;
 
 #[derive(Parser)]
-#[command(name = "rsgrep")]
+#[command(name = "smgrep")]
 #[command(about = "Semantic code search tool - Rust port of osgrep")]
 #[command(version)]
 struct Cli {
-   #[arg(long, env = "RSGREP_STORE")]
+   #[arg(long, env = "SMGREP_STORE")]
    store: Option<String>,
 
    #[command(subcommand)]

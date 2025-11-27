@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use rsgrep::{
+use smgrep::{
    chunker::{
       Chunker, anchor::create_anchor_chunk, create_chunker, fallback::FallbackChunker,
       treesitter::TreeSitterChunker,

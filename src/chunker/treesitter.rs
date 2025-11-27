@@ -7,7 +7,7 @@ use crate::{
    chunker::{
       Chunker, MAX_CHARS, MAX_LINES, OVERLAP_CHARS, OVERLAP_LINES, fallback::FallbackChunker,
    },
-   error::{Result, RsgrepError},
+   error::{Result, SmgrepError},
    grammar::GrammarManager,
    types::{Chunk, ChunkType},
 };
@@ -52,15 +52,15 @@ impl TreeSitterChunker {
       let (mut parser, store) = self.grammar_manager.create_parser_with_store()?;
       parser
          .set_wasm_store(store)
-         .map_err(|e| RsgrepError::Chunker(format!("failed to set WASM store: {:?}", e)))?;
+         .map_err(|e| SmgrepError::Chunker(format!("failed to set WASM store: {:?}", e)))?;
 
       parser
          .set_language(&language)
-         .map_err(|e| RsgrepError::Chunker(format!("failed to set language: {}", e)))?;
+         .map_err(|e| SmgrepError::Chunker(format!("failed to set language: {}", e)))?;
 
       let tree = parser
          .parse(content, None)
-         .ok_or_else(|| RsgrepError::Chunker("failed to parse file".to_string()))?;
+         .ok_or_else(|| SmgrepError::Chunker("failed to parse file".to_string()))?;
 
       let root = tree.root_node();
       let file_context = format!("File: {}", path.display());

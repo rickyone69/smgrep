@@ -1,4 +1,4 @@
-use rsgrep::format::format_chunk_text;
+use smgrep::format::format_chunk_text;
 
 #[test]
 fn test_format_chunk_text_with_context() {

@@ -1,7 +1,7 @@
 {
   "mcpServers": {
-    "rsgrep": {
-      "command": "rsgrep",
+    "smgrep": {
+      "command": "smgrep",
       "args": ["mcp"]
     }
   }

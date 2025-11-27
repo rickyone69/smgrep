@@ -14,5 +14,5 @@ pub mod store;
 pub mod sync;
 pub mod types;
 
-pub use error::{Result, RsgrepError};
+pub use error::{Result, SmgrepError};
 pub use types::*;

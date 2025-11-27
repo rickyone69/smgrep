@@ -59,7 +59,7 @@ where
       const SAVE_INTERVAL: usize = 25;
 
       let mut meta_store = MetaStore::load(store_id)?;
-      let batch_size = config::batch_size();
+      let batch_size = config::get().batch_size();
 
       let files: Vec<_> = self.file_system.get_files(root)?.collect::<Vec<_>>();
 

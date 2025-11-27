@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum RsgrepError {
+pub enum SmgrepError {
    #[error("io error")]
    Io(#[from] std::io::Error),
 
@@ -33,4 +33,4 @@ pub enum RsgrepError {
    LanceDb(String),
 }
 
-pub type Result<T, E = RsgrepError> = std::result::Result<T, E>;
+pub type Result<T, E = SmgrepError> = std::result::Result<T, E>;

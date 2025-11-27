@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use git2::Repository;
 use sha2::{Digest, Sha256};
 
-use crate::error::{Result, RsgrepError};
+use crate::error::{Result, SmgrepError};
 
 pub fn is_git_repo(path: &Path) -> bool {
    Repository::open(path).is_ok()
@@ -26,11 +26,11 @@ pub fn get_tracked_files(repo: &Repository) -> Result<Vec<PathBuf>> {
    let mut files = Vec::new();
    let index = repo
       .index()
-      .map_err(|e| RsgrepError::Git(format!("failed to read index: {}", e)))?;
+      .map_err(|e| SmgrepError::Git(format!("failed to read index: {}", e)))?;
 
    let workdir = repo
       .workdir()
-      .ok_or_else(|| RsgrepError::Git("repository has no working directory".to_string()))?;
+      .ok_or_else(|| SmgrepError::Git("repository has no working directory".to_string()))?;
 
    for entry in index.iter() {
       let path_bytes = entry.path.as_slice();
@@ -46,7 +46,7 @@ pub fn get_tracked_files(repo: &Repository) -> Result<Vec<PathBuf>> {
 }
 
 pub fn resolve_store_id(path: &Path) -> Result<String> {
-   let abs_path = path.canonicalize().map_err(RsgrepError::Io)?;
+   let abs_path = path.canonicalize().map_err(SmgrepError::Io)?;
 
    if let Ok(repo) = Repository::open(&abs_path)
       && let Some(remote_url) = get_remote_url(&repo)

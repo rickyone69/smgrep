@@ -1,4 +1,4 @@
-use rsgrep::{
+use smgrep::{
    format::{OutputMode, create_formatter, detect_output_mode},
    types::{ChunkType, SearchResult},
 };

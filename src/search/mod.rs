@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::{
    embed::Embedder,
-   error::{Result, RsgrepError},
+   error::{Result, SmgrepError},
    store::Store,
    types::SearchResponse,
 };
@@ -33,7 +33,7 @@ impl SearchEngine {
          .embedder
          .encode_query(query)
          .await
-         .map_err(|e| RsgrepError::Embedding(format!("failed to encode query: {}", e)))?;
+         .map_err(|e| SmgrepError::Embedding(format!("failed to encode query: {}", e)))?;
 
       let mut response = self
          .store

@@ -4,9 +4,9 @@ use crossbeam_channel::{Sender, bounded};
 use parking_lot::Mutex;
 
 use crate::{
-   config::{batch_size, threads, worker_timeout_ms},
+   config,
    embed::{CandleEmbedder, Embedder, HybridEmbedding},
-   error::{Result, RsgrepError},
+   error::{Result, SmgrepError},
 };
 
 enum WorkerMessage {
@@ -22,9 +22,10 @@ pub struct EmbedWorker {
 
 impl EmbedWorker {
    pub fn new() -> Result<Self> {
-      let num_threads = threads();
-      let batch_sz = batch_size();
-      let timeout = Duration::from_millis(worker_timeout_ms());
+      let cfg = config::get();
+      let num_threads = cfg.default_threads();
+      let batch_sz = cfg.batch_size();
+      let timeout = Duration::from_millis(cfg.worker_timeout_ms);
 
       let (tx, rx) = bounded::<WorkerMessage>(num_threads * 2);
       let rx = Arc::new(Mutex::new(rx));
@@ -71,7 +72,7 @@ impl EmbedWorker {
                         .unwrap_or_else(|| {
                            tokio::runtime::Runtime::new()
                               .map_err(|e| {
-                                 RsgrepError::Embedding(format!("failed to create runtime: {}", e))
+                                 SmgrepError::Embedding(format!("failed to create runtime: {}", e))
                               })
                               .and_then(|rt| {
                                  rt.block_on(async { embedder.compute_hybrid(&texts).await })
@@ -116,11 +117,11 @@ impl EmbedWorker {
          self
             .sender
             .send(WorkerMessage::Compute { texts: chunk, response: response_tx })
-            .map_err(|e| RsgrepError::Embedding(format!("failed to send work: {}", e)))?;
+            .map_err(|e| SmgrepError::Embedding(format!("failed to send work: {}", e)))?;
 
          let result = response_rx
             .recv()
-            .map_err(|e| RsgrepError::Embedding(format!("failed to receive result: {}", e)))??;
+            .map_err(|e| SmgrepError::Embedding(format!("failed to receive result: {}", e)))??;
 
          all_results.extend(result);
       }

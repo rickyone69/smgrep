@@ -9,13 +9,13 @@ pub async fn execute() -> Result<()> {
       .home_dir()
       .to_path_buf();
 
-   let data_dir = home.join(".rsgrep").join("data");
+   let data_dir = home.join(".smgrep").join("data");
 
    if !data_dir.exists() {
       println!("No stores found.");
       println!(
          "\nRun {} in a repository to create your first store.",
-         style("rsgrep index").green()
+         style("smgrep index").green()
       );
       return Ok(());
    }
@@ -41,7 +41,7 @@ pub async fn execute() -> Result<()> {
       println!("No stores found.");
       println!(
          "\nRun {} in a repository to create your first store.",
-         style("rsgrep index").green()
+         style("smgrep index").green()
       );
       return Ok(());
    }
@@ -51,7 +51,7 @@ pub async fn execute() -> Result<()> {
    println!(
       "\n{} {}",
       style(format!("Found {} store(s):", stores.len())).bold(),
-      style("(in ~/.rsgrep/data)").dim()
+      style("(in ~/.smgrep/data)").dim()
    );
    println!();
 
@@ -65,8 +65,8 @@ pub async fn execute() -> Result<()> {
       println!();
    }
 
-   println!("{}", style("To clean up a store: rm -rf ~/.rsgrep/data/<store-name>").dim());
-   println!("{}", style("To use a specific store: rsgrep --store <store-name> <query>").dim());
+   println!("{}", style("To clean up a store: rm -rf ~/.smgrep/data/<store-name>").dim());
+   println!("{}", style("To use a specific store: smgrep --store <store-name> <query>").dim());
 
    Ok(())
 }
