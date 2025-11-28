@@ -1,10 +1,9 @@
-use std::{io, path::PathBuf};
+use std::{io, path::PathBuf, sync::Arc};
 
 use thiserror::Error;
 use tree_sitter::{LanguageError, WasmError};
 
 use crate::{embed::candle::EmbeddingError, store::lance::StoreError, usock::SocketError};
-
 /// Main error type for the smgrep application.
 ///
 /// This enum represents all possible errors that can occur throughout the
@@ -13,6 +12,10 @@ use crate::{embed::candle::EmbeddingError, store::lance::StoreError, usock::Sock
 /// various other domain-specific errors.
 #[derive(Debug, Error)]
 pub enum Error {
+   /// Shared error (moka).
+   #[error(transparent)]
+   Shared(#[from] Arc<Self>),
+
    /// I/O error occurred during file or network operations.
    #[error("io error: {0}")]
    Io(#[from] io::Error),
@@ -191,25 +194,25 @@ pub enum ConfigError {
    #[error("failed to create grammars directory: {0}")]
    CreateGrammarsDir(#[source] io::Error),
 
-   /// The requested language is not supported or unknown.
-   #[error("unknown language: {0}")]
-   UnknownLanguage(String),
-
    /// Failed to download a language grammar from the remote source.
    #[error("failed to download {lang}: {reason}")]
    DownloadFailed {
-      lang:   String,
+      lang:   &'static str,
       #[source]
       reason: reqwest::Error,
    },
 
    /// Grammar download failed with a non-success HTTP status code.
    #[error("failed to download {lang}: HTTP {status}")]
-   DownloadHttpStatus { lang: String, status: u16 },
+   DownloadHttpStatus { lang: &'static str, status: u16 },
 
    /// Failed to read the HTTP response body during grammar download.
    #[error("failed to read response: {0}")]
    ReadResponse(#[source] reqwest::Error),
+
+   /// Failed to create a WASM file in the grammars directory.
+   #[error("failed to create WASM file: {0}")]
+   CreateWasmFile(#[source] io::Error),
 
    /// Failed to write the downloaded WASM grammar file to disk.
    #[error("failed to write WASM file: {0}")]
