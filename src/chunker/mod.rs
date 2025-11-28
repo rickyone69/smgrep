@@ -2,6 +2,7 @@ pub mod anchor;
 
 use std::{borrow::Cow, path::Path, slice, sync::Arc};
 
+use memchr::memchr_iter;
 use tree_sitter::Language;
 
 use crate::{
@@ -24,15 +25,10 @@ pub const STRIDE_LINES: usize = MAX_LINES - OVERLAP_LINES;
 pub struct Chunker(Arc<GrammarManager>);
 
 impl Chunker {
-   fn get_language(&self, path: &Path) -> Option<Language> {
-      match self.0.get_language_for_path(path) {
-         Ok(Some(lang)) => Some(lang),
-         Ok(None) => None,
-         Err(e) => {
-            tracing::warn!("failed to load language for {}: {}", path.display(), e);
-            None
-         },
-      }
+   async fn get_language(&self, path: &Path) -> Result<Option<Language>> {
+      self.0.get_language_for_path(path).await.inspect_err(|e| {
+         tracing::warn!("failed to load language for {}: {}", path.display(), e);
+      })
    }
 
    fn line_range_to_byte_range(
@@ -40,28 +36,20 @@ impl Chunker {
       start_line: usize,
       end_line: usize,
    ) -> (usize, usize) {
+      let bytes = content.as_bytes();
       let mut start_byte = 0;
-      let mut end_byte = content.len();
+      let mut end_byte = bytes.len();
       let mut current_line = 0;
 
-      for (idx, c) in content.char_indices() {
-         if current_line == start_line && start_byte == 0 && current_line != 0 {
-            start_byte = idx;
+      for idx in memchr_iter(b'\n', bytes) {
+         current_line += 1;
+         if current_line == end_line {
+            end_byte = idx;
+            break;
          }
-         if c == '\n' {
-            current_line += 1;
-            if current_line == end_line {
-               end_byte = idx;
-               break;
-            }
-            if current_line == start_line {
-               start_byte = idx + 1;
-            }
+         if current_line == start_line {
+            start_byte = idx + 1;
          }
-      }
-
-      if start_line == 0 {
-         start_byte = 0;
       }
 
       (start_byte, end_byte)
@@ -98,8 +86,12 @@ impl Chunker {
       chunks
    }
 
-   fn chunk_with_tree_sitter(&self, content: &Str, path: &Path) -> Result<Option<Vec<Chunk>>> {
-      let Some(language) = self.get_language(path) else {
+   async fn chunk_with_tree_sitter(
+      &self,
+      content: &Str,
+      path: &Path,
+   ) -> Result<Option<Vec<Chunk>>> {
+      let Some(language) = self.get_language(path).await? else {
          return Ok(None);
       };
 
@@ -481,9 +473,10 @@ impl Chunker {
       None
    }
 
-   pub fn chunk(&self, content: &Str, path: &Path) -> Result<Vec<Chunk>> {
+   pub async fn chunk(&self, content: &Str, path: &Path) -> Result<Vec<Chunk>> {
       let raw_chunks = self
-         .chunk_with_tree_sitter(content, path)?
+         .chunk_with_tree_sitter(content, path)
+         .await?
          .unwrap_or_else(|| Self::simple_chunk(content, path));
 
       let chunks: Vec<Chunk> = raw_chunks

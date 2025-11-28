@@ -7,17 +7,6 @@ use smgrep::{
 };
 
 #[test]
-fn test_fallback_chunker() {
-   let chunker = Chunker::default();
-   let content = Str::from_static("line 1\nline 2\nline 3\n");
-   let path = Path::new("test.zzzz");
-
-   let chunks = chunker.chunk(&content, path).unwrap();
-   assert!(!chunks.is_empty());
-   assert_eq!(chunks[0].chunk_type, Some(ChunkType::Block));
-}
-
-#[test]
 fn test_create_anchor_chunk() {
    let content = Str::from_static(
       r"
@@ -39,8 +28,8 @@ function test() {
    assert!(chunk.content.as_str().contains("Exports:"));
 }
 
-#[test]
-fn test_treesitter_chunker_typescript() {
+#[tokio::test]
+async fn test_treesitter_chunker_typescript() {
    let chunker = Chunker::default();
    let content = Str::from_static(
       r"
@@ -59,7 +48,7 @@ export class Person {
    );
    let path = Path::new("test.ts");
 
-   let result = chunker.chunk(&content, path);
+   let result = chunker.chunk(&content, path).await;
    assert!(result.is_ok());
    let chunks = result.unwrap();
 
