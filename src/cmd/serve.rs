@@ -353,7 +353,7 @@ impl Server {
          }
       }
 
-      let chunks = self.chunker.chunk(&content_str, file_path)?;
+      let chunks = self.chunker.chunk(&content_str, file_path).await?;
       if chunks.is_empty() {
          return Ok(());
       }

@@ -168,7 +168,8 @@ where
          .filter_map(|(path, hash, content, mtime)| {
             let content_str = Str::from_utf8_lossy(content);
 
-            let chunks = self.chunker.chunk(&content_str, path).ok()?;
+            let chunks =
+               futures::executor::block_on(self.chunker.chunk(&content_str, path)).ok()?;
             let anchor_chunk = create_anchor_chunk(&content_str, path);
 
             let mut prepared_chunks = Vec::new();

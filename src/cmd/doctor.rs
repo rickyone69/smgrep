@@ -4,27 +4,21 @@ use console::style;
 
 use crate::{
    Result, config,
-   error::ConfigError,
    grammar::{GRAMMAR_URLS, GrammarManager},
 };
 
 pub fn execute() -> Result<()> {
    println!("{}\n", style("smgrep Doctor").bold());
 
-   let home = directories::UserDirs::new()
-      .ok_or(ConfigError::GetUserDirectories)?
-      .home_dir()
-      .to_path_buf();
-
-   let root = home.join(".smgrep");
-   let models = root.join("models");
-   let data = root.join("data");
-   let grammars = root.join("grammars");
+   let root = config::base_dir();
+   let models = config::model_dir();
+   let data = config::data_dir();
+   let grammars = config::grammar_dir();
 
    check_dir("Root", &root);
-   check_dir("Models", &models);
-   check_dir("Data (Vector DB)", &data);
-   check_dir("Grammars", &grammars);
+   check_dir("Models", models);
+   check_dir("Data (Vector DB)", data);
+   check_dir("Grammars", grammars);
 
    println!();
 
@@ -66,7 +60,7 @@ pub fn execute() -> Result<()> {
       let missing = gm.missing_languages();
 
       for (lang, _) in GRAMMAR_URLS {
-         let exists = available.contains(lang);
+         let exists = available.clone().any(|l| &l == lang);
 
          let symbol = if exists {
             style("✓").green()
@@ -87,10 +81,10 @@ pub fn execute() -> Result<()> {
       println!(
          "{} {} of {} grammars installed",
          style("ℹ").cyan(),
-         available.len(),
+         available.count(),
          GRAMMAR_URLS.len()
       );
-      if !missing.is_empty() {
+      if missing.clone().next().is_some() {
          println!(
             "{} Missing grammars will be downloaded automatically when needed",
             style("ℹ").cyan()
@@ -99,7 +93,7 @@ pub fn execute() -> Result<()> {
    }
 
    if data.exists()
-      && let Ok(size) = get_dir_size(&data)
+      && let Ok(size) = get_dir_size(data)
    {
       println!("\n{} {}", style("Data directory size:").dim(), style(format_size(size)).cyan());
    }

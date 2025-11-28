@@ -9,41 +9,31 @@ use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::{
    Result, config,
-   error::ConfigError,
    grammar::{GRAMMAR_URLS, GrammarManager},
 };
 
 pub async fn execute() -> Result<()> {
    println!("{}\n", style("smgrep Setup").bold());
 
-   let home = directories::UserDirs::new()
-      .ok_or(ConfigError::GetUserDirectories)?
-      .home_dir()
-      .to_path_buf();
-
-   let root = home.join(".smgrep");
-   let models = root.join("models");
-   let data = root.join("data");
-   let grammars = root.join("grammars");
-
-   fs::create_dir_all(&root)?;
-   fs::create_dir_all(&models)?;
-   fs::create_dir_all(&data)?;
-   fs::create_dir_all(&grammars)?;
+   let models = config::model_dir();
+   let data = config::data_dir();
+   let grammars = config::grammar_dir();
+   fs::create_dir_all(models)?;
+   fs::create_dir_all(data)?;
+   fs::create_dir_all(grammars)?;
 
    println!("{}", style("Checking directories...").dim());
-   check_dir("Root", &root);
-   check_dir("Models", &models);
-   check_dir("Data (Vector DB)", &data);
-   check_dir("Grammars", &grammars);
+   check_dir("Models", models);
+   check_dir("Data (Vector DB)", data);
+   check_dir("Grammars", grammars);
    println!();
 
    println!("{}", style("Downloading models...").bold());
-   download_models(&models).await?;
+   download_models(models).await?;
    println!();
 
    println!("{}", style("Downloading grammars...").bold());
-   download_grammars(&grammars).await?;
+   download_grammars(grammars).await?;
 
    println!("\n{}", style("Setup Complete!").green().bold());
    println!("\n{}", style("You can now run:").dim());
@@ -114,7 +104,7 @@ async fn download_models(models_dir: &Path) -> Result<()> {
 async fn download_grammars(grammars_dir: &Path) -> Result<()> {
    let grammar_manager = GrammarManager::with_auto_download(false)?;
 
-   for (lang, _url) in GRAMMAR_URLS {
+   for pair @ (lang, _url) in GRAMMAR_URLS {
       let grammar_path = grammars_dir.join(format!("tree-sitter-{lang}.wasm"));
 
       if grammar_path.exists() {
@@ -131,8 +121,8 @@ async fn download_grammars(grammars_dir: &Path) -> Result<()> {
       spinner.enable_steady_tick(Duration::from_millis(100));
       spinner.set_message(format!("Downloading {lang} grammar..."));
 
-      match grammar_manager.download_grammar(lang).await {
-         Ok(()) => {
+      match grammar_manager.download_grammar(*pair).await {
+         Ok(_) => {
             spinner.finish_with_message(format!(
                "{} Downloaded: {}",
                style("✓").green(),
