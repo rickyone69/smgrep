@@ -4,31 +4,21 @@ use clap::{Parser, Subcommand};
 use smgrep::{
    Result,
    cmd::{self, search::SearchOptions},
+   version,
 };
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
 
-static VERSION_STRING: LazyLock<String> = LazyLock::new(|| {
-   const VERSION: &str = env!("CARGO_PKG_VERSION");
-   const GIT_HASH: &str = env!("GIT_HASH");
-   const GIT_TAG: &str = env!("GIT_TAG");
-   const GIT_DIRTY: &str = env!("GIT_DIRTY");
-
-   let dirty = if GIT_DIRTY == "true" { "-dirty" } else { "" };
-   if GIT_TAG.is_empty() {
-      format!("{VERSION} ({GIT_HASH}{dirty})")
-   } else {
-      format!("{VERSION} ({GIT_TAG}, {GIT_HASH}{dirty})")
-   }
-});
+static VERSION_STRING: LazyLock<String> = LazyLock::new(version::version_string);
 
 fn version_string() -> &'static str {
    &VERSION_STRING
 }
 
+/// Command-line arguments for the smgrep application
 #[derive(Parser)]
 #[command(name = "smgrep")]
-#[command(about = "Semantic code search tool - Rust port of osgrep")]
+#[command(about = "Semantic code search tool")]
 #[command(version = version_string())]
 struct Cli {
    #[arg(long, env = "SMGREP_STORE")]
@@ -41,6 +31,7 @@ struct Cli {
    query: Vec<String>,
 }
 
+/// Available subcommands for smgrep
 #[derive(Subcommand)]
 enum Cmd {
    #[command(about = "Search indexed code semantically")]
@@ -118,6 +109,15 @@ enum Cmd {
    #[command(about = "Show status of running daemons")]
    Status,
 
+   #[command(about = "Remove index data and metadata for a store")]
+   Clean {
+      #[arg(help = "Store ID to clean (default: current directory's store)")]
+      store_id: Option<String>,
+
+      #[arg(long, help = "Clean all stores")]
+      all: bool,
+   },
+
    #[command(about = "Download and configure embedding models")]
    Setup,
 
@@ -179,6 +179,7 @@ async fn main() -> Result<()> {
       Some(Cmd::Stop { path }) => cmd::stop::execute(path).await,
       Some(Cmd::StopAll) => cmd::stop_all::execute().await,
       Some(Cmd::Status) => cmd::status::execute().await,
+      Some(Cmd::Clean { store_id, all }) => cmd::clean::execute(store_id, all),
       Some(Cmd::Setup) => cmd::setup::execute().await,
       Some(Cmd::Doctor) => cmd::doctor::execute(),
       Some(Cmd::List) => cmd::list::execute(),
