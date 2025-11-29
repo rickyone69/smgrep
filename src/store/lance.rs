@@ -952,13 +952,20 @@ impl super::Store for LanceStore {
             let prev_content = prev_str.value(*row_idx);
             context_prev_lines = prev_content.lines().count() as u32;
             full_content.push_str(prev_content);
+            if !prev_content.ends_with('\n') {
+               full_content.push('\n');
+            }
          }
          full_content.push_str(&content);
          if let Some(next_col) = batch.column_by_name("context_next")
             && !next_col.is_null(*row_idx)
             && let Some(next_str) = next_col.as_any().downcast_ref::<StringArray>()
          {
-            full_content.push_str(next_str.value(*row_idx));
+            let next_content = next_str.value(*row_idx);
+            if !full_content.ends_with('\n') && !next_content.is_empty() {
+               full_content.push('\n');
+            }
+            full_content.push_str(next_content);
          }
 
          let adjusted_start_line = start_line.saturating_sub(context_prev_lines);
