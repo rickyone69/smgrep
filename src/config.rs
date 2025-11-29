@@ -1,3 +1,5 @@
+//! Configuration management for model settings, performance tuning, and paths.
+
 use std::{
    fs,
    path::{Path, PathBuf},
@@ -13,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
 
+/// Application configuration loaded from config file and environment variables
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -45,7 +48,7 @@ pub struct Config {
 impl Default for Config {
    fn default() -> Self {
       Self {
-         dense_model:              "ibm-granite/granite-embedding-30m-english".to_string(),
+         dense_model:              "ibm-granite/granite-embedding-small-english-r2".to_string(),
          colbert_model:            "answerdotai/answerai-colbert-small-v1".to_string(),
          dense_dim:                384,
          colbert_dim:              96,
@@ -81,6 +84,7 @@ impl Config {
          .merge(Toml::file(config_path))
          .merge(Env::prefixed("SMGREP_").lowercase(false))
          .extract()
+         .inspect_err(|e| tracing::warn!("failed to parse config: {e}"))
          .unwrap_or_default()
    }
 
@@ -94,24 +98,39 @@ impl Config {
       }
    }
 
+   /// Returns the configured batch size, capped at maximum
    pub fn batch_size(&self) -> usize {
       self.default_batch_size.min(self.max_batch_size)
    }
 
+   /// Calculates default thread count based on available CPUs
    pub fn default_threads(&self) -> usize {
       (num_cpus::get().saturating_sub(4)).clamp(1, self.max_threads)
    }
 }
 
+/// Returns the global configuration instance
 pub fn get() -> &'static Config {
    CONFIG.get_or_init(Config::load)
 }
 
-pub fn base_dir() -> PathBuf {
-   BaseDirs::new()
-      .expect("failed to locate base directories")
-      .home_dir()
-      .join(".smgrep")
+/// Returns the base directory for smgrep data and configuration
+pub fn base_dir() -> &'static PathBuf {
+   static ONCE: OnceLock<PathBuf> = OnceLock::new();
+   ONCE.get_or_init(|| {
+      BaseDirs::new()
+         .map(|d| d.home_dir().join(".smgrep"))
+         .or_else(|| {
+            std::env::var("HOME")
+               .ok()
+               .map(|h| PathBuf::from(h).join(".smgrep"))
+         })
+         .unwrap_or_else(|| {
+            std::env::current_dir()
+               .unwrap_or_else(|_| PathBuf::from("."))
+               .join(".smgrep")
+         })
+   })
 }
 
 macro_rules! define_paths {
